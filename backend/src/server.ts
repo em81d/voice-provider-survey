@@ -158,6 +158,34 @@ function sendError(ws: WebSocket, message: string) {
   ws.send(JSON.stringify(errorFrame));
 }
 
+// Hume EVI returns audio_output as a base64-encoded WAV *file* (RIFF header +
+// PCM), not the raw PCM the frontend's playback path expects. Walk the RIFF
+// chunks to pull out the real sample rate from "fmt " and the PCM bytes from
+// "data". Returns null if the buffer isn't a WAV we recognise, so the caller
+// can fall back to forwarding it untouched.
+function parseWav(buf: Buffer): { pcm: Buffer; sampleRate: number } | null {
+  if (buf.length < 12 || buf.toString('ascii', 0, 4) !== 'RIFF' || buf.toString('ascii', 8, 12) !== 'WAVE') {
+    return null;
+  }
+  let sampleRate = 0;
+  let pcm: Buffer | null = null;
+  let offset = 12; // skip RIFF header (4) + size (4) + WAVE (4)
+  while (offset + 8 <= buf.length) {
+    const chunkId = buf.toString('ascii', offset, offset + 4);
+    const chunkSize = buf.readUInt32LE(offset + 4);
+    const dataStart = offset + 8;
+    if (chunkId === 'fmt ' && dataStart + 16 <= buf.length) {
+      sampleRate = buf.readUInt32LE(dataStart + 4); // bytes 4–7 of fmt body
+    } else if (chunkId === 'data') {
+      pcm = buf.subarray(dataStart, Math.min(dataStart + chunkSize, buf.length));
+    }
+    // Chunks are word-aligned: odd sizes are padded with a trailing byte.
+    offset = dataStart + chunkSize + (chunkSize % 2);
+  }
+  if (!pcm || !sampleRate) return null;
+  return { pcm, sampleRate };
+}
+
 wss.on("connection", (ws, req) => {
   const urlParams = new URL(req.url || "", `http://${req.headers.host}`);
   const token = urlParams.searchParams.get("token");
@@ -195,6 +223,7 @@ wss.on("connection", (ws, req) => {
   let isSetupComplete = false;
   let elevenReady = false;
   let humeReady = false;
+  let humeConfigSent = false; // becomes true once we've read Hume's rate from its first WAV chunk
 
   if (provider === 'google') {
     try {
@@ -229,6 +258,13 @@ wss.on("connection", (ws, req) => {
         
         geminiLiveSocket?.send(JSON.stringify(setupMessage));
         isSetupComplete = true;
+
+        // Gemini Live ALWAYS returns audio at 24kHz (16-bit, mono, little-endian),
+        // regardless of the 16kHz we send upstream. Tell the frontend explicitly —
+        // don't lean on its 24000 default, because sampleRateRef persists across
+        // reconnects, so a prior ElevenLabs (16000) or Hume (48000) session would
+        // otherwise leave Gemini playing at the wrong pitch/speed.
+        ws.send(JSON.stringify({ type: 'session_config', sampleRate: 24000 }));
         console.log('✅ Setup block cleared. Stream is primed for recording packets.');
       });
 
@@ -316,17 +352,35 @@ wss.on("connection", (ws, req) => {
 
         switch (frame.type) {
 
-          case 'conversation_initiation_metadata':
+          case 'conversation_initiation_metadata': {
             // Session is confirmed ready — now safe to forward mic audio
             elevenReady = true;
-            console.log('✅ ElevenLabs session confirmed. Audio format:',
-              frame.conversation_initiation_metadata_event.agent_output_audio_format);
-            
+
+            // The agent's output format is configured in the ElevenLabs dashboard
+            // and reported here as e.g. "pcm_16000" / "pcm_24000" / "pcm_44100".
+            // Derive the playback rate from it instead of hardcoding 16000, which
+            // silently breaks if the agent is ever switched off the default.
+            const outputFormat: string =
+              frame.conversation_initiation_metadata_event?.agent_output_audio_format ?? '';
+            console.log('✅ ElevenLabs session confirmed. Audio format:', outputFormat);
+
+            const pcmMatch = outputFormat.match(/^pcm_(\d+)$/);
+            if (!pcmMatch) {
+              // ulaw_8000 / mp3_* can't be played by the frontend's raw-PCM path.
+              // Forwarding them would produce noise, so fail loud instead.
+              console.error(
+                `💡 Diagnosis: ElevenLabs agent output format "${outputFormat}" is not raw PCM. ` +
+                `The frontend expects pcm_* — set the agent's output format to pcm_16000/24000/44100.`
+              );
+            }
+            const sampleRate = pcmMatch ? parseInt(pcmMatch[1], 10) : 16000;
+
             ws.send(JSON.stringify({
               type: 'session_config',
-              sampleRate: 16000
+              sampleRate
             }));
             break;
+          }
 
           case 'audio':
             // Decode base64 PCM and send as raw binary to the browser
@@ -412,8 +466,10 @@ wss.on("connection", (ws, req) => {
 
 
       humeReady = true;
-      // No initiation frame needed — the session is live immediately on open
-      ws.send(JSON.stringify({ type: 'session_config', sampleRate: 48000 }));
+      // No initiation frame needed — the session is live immediately on open.
+      // We intentionally DON'T announce a sample rate here: Hume returns WAV
+      // files whose real rate lives in the header, so we read it off the first
+      // audio chunk below rather than hardcoding 48000.
     });
 
     humeSocket.on('message', (data: WebSocket.RawData) => {
@@ -427,13 +483,37 @@ wss.on("connection", (ws, req) => {
             console.log('✅ Hume session established. Chat ID:', frame.chat_group_id);
             break;
 
-          case 'audio_output':
-            // Base64-encoded audio chunk — same pattern as ElevenLabs
+          case 'audio_output': {
+            // Hume sends a base64-encoded WAV *file* (RIFF header + PCM), unlike
+            // Gemini/ElevenLabs which send raw PCM. Strip the header so the
+            // frontend's raw-Int16 playback path doesn't render it as a click,
+            // and read the true sample rate from the header instead of guessing.
             if (frame.data) {
-              const audioBuffer = Buffer.from(frame.data, 'base64');
-              ws.send(audioBuffer);
+              const wavBuffer = Buffer.from(frame.data, 'base64');
+              const parsed = parseWav(wavBuffer);
+
+              if (parsed) {
+                if (!humeConfigSent) {
+                  // Must reach the frontend before the first PCM frame; WS
+                  // preserves order, so sending it here is safe.
+                  ws.send(JSON.stringify({ type: 'session_config', sampleRate: parsed.sampleRate }));
+                  humeConfigSent = true;
+                  console.log(`✅ Hume audio rate detected from WAV header: ${parsed.sampleRate}Hz`);
+                }
+                ws.send(parsed.pcm);
+              } else {
+                // Not a WAV we recognise — fall back to forwarding untouched and
+                // announce Hume's documented 48kHz default so playback isn't silent.
+                if (!humeConfigSent) {
+                  ws.send(JSON.stringify({ type: 'session_config', sampleRate: 48000 }));
+                  humeConfigSent = true;
+                  console.warn('⚠️ Hume audio_output was not a parseable WAV; assuming 48kHz.');
+                }
+                ws.send(wavBuffer);
+              }
             }
             break;
+          }
 
           case 'assistant_message':
             // EVI's text response for the chat transcript
