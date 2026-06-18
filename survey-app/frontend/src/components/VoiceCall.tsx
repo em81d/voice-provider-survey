@@ -13,7 +13,7 @@ interface VoiceCallProps {
   minDurationSeconds?: number; // optional floor before "end call" is enabled
 }
 
-export function VoiceCall({ onFinishCall, minDurationSeconds = 0 }: VoiceCallProps) {
+export function VoiceCall({ onFinishCall, minDurationSeconds = 90 }: VoiceCallProps) {
   const { connectionState, waveLevel, messages, errorMessage, toggleConnection } = useVoiceSocket();
   const msgEndRef = useRef<HTMLDivElement>(null);
   const connectedAtRef = useRef<number | null>(null);
