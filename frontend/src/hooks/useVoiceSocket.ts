@@ -14,6 +14,11 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:5000";
 // already used — see CLOSE_INVALID_TOKEN in backend/src/server.ts.
 const CLOSE_INVALID_TOKEN = 4001;
 
+// Fallback only used if audio somehow arrives before a 'session_config'
+// frame (shouldn't happen given backend ordering, but better than silently
+// guessing the device's native rate via a bare `new AudioContext()`).
+const DEFAULT_SAMPLE_RATE = 24000;
+
 export function useVoiceSocket() {
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
   const [waveLevel, setWaveLevel] = useState<WaveLevel>("idle");
@@ -29,7 +34,7 @@ export function useVoiceSocket() {
   const playbackContextRef = useRef<AudioContext | null>(null);
   const nextStartTimeRef = useRef<number>(0);
   const activeAudioNodesRef = useRef<AudioBufferSourceNode[]>([]);
-  const sampleRateRef = useRef<number>(24000);
+  const sampleRateRef = useRef<number>(DEFAULT_SAMPLE_RATE);
 
   // ── Cleanup ────────────────────────────────────────────────────────────
 
@@ -50,6 +55,11 @@ export function useVoiceSocket() {
       if (playbackContextRef.current.state !== "closed") playbackContextRef.current.close();
       playbackContextRef.current = null;
     }
+    // Don't let this session's rate leak into the next one. If a future
+    // provider's backend code ever forgets to send 'session_config' before
+    // its first chunk, we want a known default, not whatever the previous
+    // call happened to leave behind.
+    sampleRateRef.current = DEFAULT_SAMPLE_RATE;
   }, []);
 
   const cleanupUIState = useCallback(() => {
@@ -126,19 +136,61 @@ export function useVoiceSocket() {
     }
   }, [disconnect]);
 
+  // ── Playback context setup ────────────────────────────────────────────
+
+  // Builds (or rebuilds) the playback AudioContext at the exact sample rate
+  // the backend told us to expect, instead of letting the browser pick its
+  // native device rate. Letting it default meant every chunk got an
+  // independent, lossy resample from sampleRateRef -> native rate, which is
+  // what produced the tinny/pitch-wobbling audio — especially noticeable on
+  // Gemini's many small chunks.
+  const initPlaybackContext = useCallback((rate: number) => {
+    // Stop and clear any nodes scheduled against the old context — they
+    // can't be carried over to a new one.
+    activeAudioNodesRef.current.forEach((node) => { try { node.stop(); } catch { /* already ended */ } });
+    activeAudioNodesRef.current = [];
+
+    if (playbackContextRef.current && playbackContextRef.current.state !== "closed") {
+      playbackContextRef.current.close();
+    }
+
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    try {
+      playbackContextRef.current = new AudioContextClass({ sampleRate: rate });
+    } catch {
+      // Some browsers reject arbitrary sampleRate values — fall back to
+      // native and accept the resample rather than failing outright.
+      console.warn(`AudioContext rejected sampleRate=${rate}; falling back to device default.`);
+      playbackContextRef.current = new AudioContextClass();
+    }
+    nextStartTimeRef.current = playbackContextRef.current.currentTime;
+  }, []);
+
   // ── Playback ───────────────────────────────────────────────────────────
 
   const handleIncomingAudioChunk = useCallback(async (arrayBuffer: ArrayBuffer) => {
     try {
       if (!playbackContextRef.current) {
-        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-        playbackContextRef.current = new AudioContextClass();
-        nextStartTimeRef.current = playbackContextRef.current.currentTime;
+        // Shouldn't happen given backend ordering (session_config always
+        // precedes the first audio chunk), but guard against it rather than
+        // silently defaulting to the device's native rate.
+        console.warn("Audio chunk arrived before session_config; initializing playback context with default rate.");
+        initPlaybackContext(sampleRateRef.current);
       }
-      const ctx = playbackContextRef.current;
+      const ctx = playbackContextRef.current!;
       if (ctx.state === "suspended") await ctx.resume();
 
-      const int16Array = new Int16Array(arrayBuffer);
+      // Int16Array requires an even byte length. A chunk boundary that
+      // splits a 16-bit sample would otherwise throw and silently drop the
+      // whole chunk — trim the stray trailing byte instead so we only lose
+      // a single sample, not the whole buffer.
+      let buf = arrayBuffer;
+      if (buf.byteLength % 2 !== 0) {
+        console.warn(`Audio chunk had odd byte length (${buf.byteLength}); dropping trailing byte.`);
+        buf = buf.slice(0, buf.byteLength - 1);
+      }
+
+      const int16Array = new Int16Array(buf);
       const float32Array = new Float32Array(int16Array.length);
       for (let i = 0; i < int16Array.length; i++) float32Array[i] = int16Array[i] / 32768.0;
 
@@ -162,7 +214,7 @@ export function useVoiceSocket() {
     } catch (err) {
       console.error("Error scheduling audio playback:", err);
     }
-  }, []);
+  }, [initPlaybackContext]);
 
   const handleUserInterruption = useCallback(() => {
     activeAudioNodesRef.current.forEach((node) => { try { node.stop(); } catch { /* already ended */ } });
@@ -205,6 +257,9 @@ export function useVoiceSocket() {
 
           if (data.type === "session_config") {
             sampleRateRef.current = data.sampleRate;
+            // Rebuild the playback context at the actual announced rate so
+            // chunks play back without per-chunk resampling.
+            initPlaybackContext(data.sampleRate);
             return;
           }
           if (data.type === "text") {
@@ -244,7 +299,7 @@ export function useVoiceSocket() {
       setErrorMessage(err.message ?? "Could not reach the server.");
       cleanupUIState();
     }
-  }, [startRecording, handleIncomingAudioChunk, handleUserInterruption, cleanupUIState]);
+  }, [startRecording, handleIncomingAudioChunk, handleUserInterruption, cleanupUIState, initPlaybackContext]);
 
   const toggleConnection = useCallback(() => {
     if (connectionState === "active" || connectionState === "connecting") {

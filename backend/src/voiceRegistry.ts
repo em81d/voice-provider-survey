@@ -11,7 +11,6 @@ export const VOICE_REGISTRY: VoiceRegistry = {
     { id: "Puck", name: "Puck", desc: "Energetic" },
     { id: "Charon", name: "Charon", desc: "Deep calm" },
     { id: "Kore", name: "Kore", desc: "Balanced" },
-    { id: "Fenrir", name: "Fenrir", desc: "Monster deep" },
   ],
   elevenlabs: [
     { id: "e0LG5Mpq7SLRdJvrtmcJ", name: "grandma", desc: "new old lady friend" },
@@ -19,7 +18,9 @@ export const VOICE_REGISTRY: VoiceRegistry = {
     { id: "JaagUurP1dmW3WscoJ79", name: "dahlia", desc: "intriguing gal" },
   ],
   hume: [
-    { id: "ee96fb5f-ec1a-4f41-a9ba-6d119e64c8fd", name: "EVI", desc: "Adaptive emotion - Alex" },
+    { id: "ee96fb5f-ec1a-4f41-a9ba-6d119e64c8fd", name: "vince", desc: "vince!" },
+    { id: "59cfc7ab-e945-43de-ad1a-471daa379c67", name: "kora", desc: "annoying tiktok girl"},
+    { id: "f60ecf9e-ff1e-4bae-9206-dba7c653a69e", name: "ito", desc: "a normal sounding guy" }
   ],
 };
 
