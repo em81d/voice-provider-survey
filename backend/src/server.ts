@@ -153,6 +153,11 @@ import type { ServerToClientMessage } from "./types";
 // drop and show the right message instead of just "connection lost."
 const CLOSE_INVALID_TOKEN = 4001;
 
+function sendError(ws: WebSocket, message: string) {
+  const errorFrame: ServerToClientMessage = { type: "error", message };
+  ws.send(JSON.stringify(errorFrame));
+}
+
 wss.on("connection", (ws, req) => {
   const urlParams = new URL(req.url || "", `http://${req.headers.host}`);
   const token = urlParams.searchParams.get("token");
@@ -178,26 +183,10 @@ wss.on("connection", (ws, req) => {
 
   console.log(`🔌 Session ${token} active — provider=${provider}`); // server-only log, never sent to client
 
-  // ... existing provider branching (google/elevenlabs/hume) goes here,
-  // using `provider` and `voiceId` instead of reading them off the URL ...
-});
-
-function sendError(ws: WebSocket, message: string) {
-  const errorFrame: ServerToClientMessage = { type: "error", message };
-  ws.send(JSON.stringify(errorFrame));
-}
-
-
-
-
-// 3. Set up the connection heartbeat listener
-wss.on('connection', async (ws, req) => {
-  console.log('🔌 New client handshaking via WebSocket...');
-
-  // 1. Extract routing parameters from URL (e.g., ws://localhost:5000/?provider=google&voiceId=Kore)
-  const urlParams = new URL(req.url || '', `http://${req.headers.host}`);
-  const provider = urlParams.searchParams.get('provider') || 'google';
-  const voiceId = urlParams.searchParams.get('voiceId') || 'Puck';
+  // Everything below talks to the session's hidden provider/voiceId,
+  // resolved from the token above — never from the URL. The browser only
+  // ever sends ?token=…; which backend it reaches is decided server-side,
+  // which is what keeps the test blind.
 
   // We maintain a reference to our outbound API connection
   let geminiLiveSocket: WebSocket | null = null;

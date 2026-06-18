@@ -14,7 +14,7 @@ interface VoiceCallProps {
 }
 
 export function VoiceCall({ onFinishCall, minDurationSeconds = 90 }: VoiceCallProps) {
-  const { connectionState, waveLevel, messages, errorMessage, toggleConnection } = useVoiceSocket();
+  const { connectionState, waveLevel, messages, errorMessage, toggleConnection, token } = useVoiceSocket();
   const msgEndRef = useRef<HTMLDivElement>(null);
   const connectedAtRef = useRef<number | null>(null);
 
@@ -130,29 +130,30 @@ export function VoiceCall({ onFinishCall, minDurationSeconds = 90 }: VoiceCallPr
         alignItems: "center", gap: 12, background: "#FAFAFA", borderTop: "1px solid #F3F4F6",
       }}>
         <button
-          onClick={toggleConnection}
-          aria-label={connectionState === "active" ? "Disconnect" : "Start conversation"}
-          style={{
-            width: 64, height: 64, borderRadius: "50%", border: "none",
-            background: connectionState === "active" ? "#EF4444" : connectionState === "connecting" ? "#F59E0B" : "#4B5563",
-            color: "#fff", cursor: "pointer", fontSize: 14, fontWeight: 600,
-          }}
+          onClick={connectionState === "active" ? handleEndCall : toggleConnection}
+          disabled={connectionState === "active" && !elapsedOk()}
+          aria-label={connectionState === "active" ? "End call and advance to survey" : "Start conversation"}
+          style={
+            connectionState === "active"
+              ? {
+                  padding: "14px 28px", borderRadius: 999, border: "none",
+                  background: elapsedOk() ? "#EF4444" : "#FCA5A5",
+                  color: "#fff", cursor: elapsedOk() ? "pointer" : "not-allowed",
+                  fontSize: 14, fontWeight: 600,
+                }
+              : {
+                  width: 64, height: 64, borderRadius: "50%", border: "none",
+                  background: connectionState === "connecting" ? "#F59E0B" : "#4B5563",
+                  color: "#fff", cursor: "pointer", fontSize: 14, fontWeight: 600,
+                }
+          }
         >
-          {connectionState === "active" ? "End" : connectionState === "connecting" ? "…" : "Start"}
+          {connectionState === "active"
+            ? "End call & advance to survey"
+            : connectionState === "connecting"
+            ? "…"
+            : "Start"}
         </button>
-
-        {connectionState === "active" && (
-          <button
-            onClick={handleEndCall}
-            disabled={!elapsedOk()}
-            style={{
-              fontSize: 13, fontWeight: 500, color: elapsedOk() ? "#374151" : "#D1D5DB",
-              background: "none", border: "none", cursor: elapsedOk() ? "pointer" : "not-allowed",
-            }}
-          >
-            Finish &amp; continue to survey
-          </button>
-        )}
       </div>
     </div>
   );
