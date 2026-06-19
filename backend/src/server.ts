@@ -135,7 +135,7 @@ app.post('/api/chat', async (req, res) => {
 
 // 1. Capture the HTTP server instance created by Express
 const server = app.listen(port, () => {
-  console.log(`Multi-Provider Studio Live on http://localhost:${port}`);
+  console.log(`Multi-Provider Studio Live`);
 });
 
 // 2. Attach the WebSocket Server to that exact same HTTP server
