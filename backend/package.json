@@ -20,11 +20,13 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "mongoose": "^9.7.1",
     "ws": "^8.21.0"
   },
   "allowScripts": {
     "@google/genai@2.8.0": true,
-    "protobufjs@7.6.4": true
+    "protobufjs@7.6.4": true,
+    "esbuild@0.28.1": true
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

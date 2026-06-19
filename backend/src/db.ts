@@ -1,0 +1,12 @@
+// backend/src/db.ts
+import mongoose from 'mongoose';
+
+export const connectDB = async () => {
+  try {
+    // Paste your connection string here or from environment variables
+    await mongoose.connect(process.env.MONGO_URI!);
+    console.log("MongoDB Connected");
+  } catch (err) {
+    console.error("MongoDB Connection Error:", err);
+  }
+};
