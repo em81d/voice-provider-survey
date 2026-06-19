@@ -5,8 +5,13 @@ import { GoogleGenAI } from '@google/genai';
 import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 import WebSocket, { WebSocketServer } from 'ws';
 import sessionRouter from "./routes/session";
+import { connectDB } from "./db";
 
 dotenv.config();
+
+// Establish the MongoDB Atlas connection at startup. Without this, saveResult()
+// has no live connection and survey submissions silently fail to persist.
+connectDB();
 
 if (!process.env.GEMINI_API_KEY || !process.env.ELEVENLABS_API_KEY || !process.env.HUME_API_KEY) {
   console.error("❌ CRITICAL ERROR: Missing API keys in backend/.env file.");
