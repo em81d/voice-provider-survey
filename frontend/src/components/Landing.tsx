@@ -5,7 +5,7 @@ interface LandingProps {
 export function Landing({ onStart }: LandingProps) {
   return (
     <div style={{ maxWidth: 560, margin: "4rem auto", textAlign: "center", padding: "0 1.5rem" }}>
-      <h1 style={{ fontSize: 28, fontWeight: 600, marginBottom: 12 }}>Conversational Vocie Survey</h1>
+      <h1 style={{ fontSize: 28, fontWeight: 600, marginBottom: 12 }}>Conversational Voice Survey</h1>
       <p style={{ fontSize: 14, color: "#666", lineHeight: 1.6, margin: 28 }}>
         You'll have a short voice conversation, then answer a few questions about what it was like.
       </p>
