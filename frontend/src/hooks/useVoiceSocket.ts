@@ -231,7 +231,9 @@ export function useVoiceSocket() {
 
     try {
       // 1. Get a token — provider/voice are decided server-side and never sent here.
-      const startRes = await fetch(`${API_BASE}/api/session/start`, { method: "POST" });
+      const fullUrl = new URL("/api/session/start", API_BASE).toString();
+      const startRes = await fetch(fullUrl, { method: "POST" });
+
       if (!startRes.ok) throw new Error("Could not start a session. Please try again.");
       const { token } = (await startRes.json()) as { token: string };
       setToken(token);
