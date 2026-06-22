@@ -7,6 +7,8 @@
 import { useEffect, useRef } from "react";
 import { useVoiceSocket } from "../hooks/useVoiceSocket";
 import { Waveform } from "./Waveform";
+// No text transcript is shown for any provider — the call UI is audio-only so
+// every backend presents identically to the participant.
 
 interface VoiceCallProps {
   onFinishCall: (token: string | null) => void; // advances App.tsx to the post-call survey
@@ -14,13 +16,8 @@ interface VoiceCallProps {
 }
 
 export function VoiceCall({ onFinishCall, minDurationSeconds = 90 }: VoiceCallProps) {
-  const { connectionState, waveLevel, messages, errorMessage, toggleConnection, token } = useVoiceSocket();
-  const msgEndRef = useRef<HTMLDivElement>(null);
+  const { connectionState, waveLevel, errorMessage, toggleConnection, token } = useVoiceSocket();
   const connectedAtRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    msgEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
 
   useEffect(() => {
     if (connectionState === "active" && connectedAtRef.current === null) {
@@ -71,34 +68,16 @@ export function VoiceCall({ onFinishCall, minDurationSeconds = 90 }: VoiceCallPr
         </div>
       </div>
 
-      {/* Transcript */}
+      {/* Audio-only — no text transcript is shown for any provider */}
       <div style={{
-        flex: 1, overflowY: "auto", padding: "16px 20px",
-        display: "flex", flexDirection: "column", gap: 10,
+        flex: 1, padding: "16px 20px",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        color: "#9CA3AF", fontSize: 13, textAlign: "center",
         minHeight: 200, maxHeight: 260,
       }}>
-        {messages.length === 0 ? (
-          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#9CA3AF", fontSize: 13, textAlign: "center" }}>
-            Press the button below to start the conversation.
-          </div>
-        ) : (
-          messages.map((msg) => (
-            <div key={msg.id} style={{
-              alignSelf: msg.sender === "user" ? "flex-end" : "flex-start",
-              maxWidth: "76%",
-              padding: "9px 13px",
-              borderRadius: 14,
-              fontSize: 14,
-              lineHeight: 1.55,
-              background: "#F9FAFB",
-              border: "1px solid #F3F4F6",
-              color: "#111827",
-            }}>
-              {msg.text}
-            </div>
-          ))
-        )}
-        <div ref={msgEndRef} />
+        {connectionState === "active"
+          ? "You're connected — speak naturally to continue the conversation."
+          : "Press the button below to start the conversation."}
       </div>
 
       {/* Waveform */}
