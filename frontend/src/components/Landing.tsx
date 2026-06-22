@@ -12,6 +12,8 @@ export function Landing({ onStart }: LandingProps) {
       <p style={{ fontSize: 14, color: "#666", lineHeight: 1.6, margin: 20 }}>If you get a chance, see how the voice does with being interrupted, and handling a variety of emotions.</p>
       <p style={{ fontSize: 14, color: "#666", lineHeight: 1.6, margin: 20 }}>You can take the survey a few times so you can get a few of the different voices.</p>
       <p style={{ fontSize: 14, color: "#666", lineHeight: 1.6, margin: 20 }}>The voices are generally pretty good at hearing you during the conversation, but if they don't respond at the very beginning try saying "hello, are you there?" (I'm working on this bug)</p>
+      <p style={{ fontSize: 14, color: "#666", lineHeight: 1.6, margin: 20 }}>It's set so that conversations have to last at least 90 seconds.</p>
+
 
       <button onClick={onStart} style={{ background: "#1a1a1a", color: "#fff", border: "none", borderRadius: 8, padding: "12px 28px", fontSize: 14, fontWeight: 500, cursor: "pointer", marginTop: "20px"}} onMouseEnter={ (e: React.MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.backgroundColor = '#444'} } onMouseLeave={ (e: React.MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.backgroundColor = 'black';}}>
         Start
